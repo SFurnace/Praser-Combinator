@@ -1,15 +1,18 @@
 #lang racket/base
 (require "./parseable.rkt"
-         racket/contract
-         parser-tools/lex
-         (prefix-in : parser-tools/lex-sre)
+         racket/contract racket/struct
          (only-in racket/vector vector-copy)
          (for-syntax racket/base syntax/parse))
 
-(provide Tok (struct-out Token) <raw-tok> <tok> ignore
-         (contract-out [do-lex (-> procedure? input-port? (is-a?/c parseable<%>))])
+(provide (struct-out Token) define-tokens
+         ignored ignored?
+         (all-from-out "./parseable.rkt"))
 
-         lexer start-pos end-pos lexeme input-port file-path
+;; Lexer
+(require parser-tools/lex
+         (prefix-in : parser-tools/lex-sre))
+
+(provide lexer start-pos end-pos lexeme input-port file-path
          define-lex-abbrev define-lex-abbrevs define-lex-trans
 
          char-set any-char any-string nothing
@@ -17,7 +20,47 @@
          symbolic punctuation graphic whitespace blank iso-control
          :* :+ :? := :>= :** :: :& :- :~ :/
 
-         (all-from-out "./parseable.rkt"))
+         (contract-out [do-lex (-> procedure? input-port? (is-a?/c parseable<%>))]))
+
+(define (do-lex lexer in)
+  (port-count-lines! in)
+  (let loop ([toks '()])
+    (if (eof-object? (peek-byte in))
+        (new token-stream+c% [tokens (list->vector (reverse toks))])
+        (let ([t (lexer in)])
+          (cond
+            [(ignored? t) (loop toks)]
+            [else (loop (cons t toks))])))))
+
+;; Token
+(struct Token [name value start-pos end-pos]
+  #:inspector (make-inspector)
+  #:methods gen:custom-write
+  [(define write-proc
+     (make-constructor-style-printer
+      (lambda _ "Token")
+      (lambda (t) (list (Token-name t)))))])
+
+(define ((token-checker name) in)
+  (let ([pos (send-generic in get-pos)]
+        [x (send-generic in pread 1)])
+    (cond
+      [(and (Token? x) (eq? name (Token-name x))) x]
+      [else (send-generic in set-pos pos) parse-failed])))
+
+(define-syntax (define-tokens stx)
+  (syntax-parse stx
+    [(_ name:id ...+)
+     (with-syntax ([(checker ...) (make-checker-names #'(name ...))])
+       #`(begin
+           (begin
+             (define-syntax (name stx)
+               (syntax-parse stx
+                 [(_) #'(Token 'name (void) start-pos end-pos)]
+                 [(_ val:expr) #'(Token 'name val start-pos end-pos)]))
+             (define checker
+               (values (token-checker 'name))))
+           ...))]))
 
 ;; Token Stream
 (define token-stream%
@@ -39,10 +82,10 @@
         [(>= pos l) eof]
         [(= n 1)
          (begin0 (vector-ref toks pos)
-                 (set! pos p))]
+           (set! pos p))]
         [else
          (begin0 (vector-copy toks pos (min p l))
-                 (set! pos (min p l)))]))
+           (set! pos (min p l)))]))
 
     (define/public (peek [n 1])
       (define-values (l p) (values (vector-length toks) (+ pos n)))
@@ -58,49 +101,18 @@
            [peek (->*m () (exact-positive-integer?) any)])
   token-stream%)
 
-(define ignore
-  (let ()
-    (struct IGNORE []
-      #:inspector (make-inspector)
-      #:methods gen:custom-write
-      [(define (write-proc s in _)
-         (display "IGNORE" in))])
-    (IGNORE)))
+;; Special Object
+(define ignored (gensym "ignored"))
 
-(define (do-lex lexer in)
-  (port-count-lines! in)
-  (let loop ([toks '()])
-    (if (eof-object? (peek-byte in))
-        (new token-stream+c% [tokens (list->vector (reverse toks))])
-        (let ([t (lexer in)])
-          (cond
-            [(eq? ignore t) (loop toks)]
-            [else (loop (cons t toks))])))))
+(define (ignored? x)
+  (eq? x ignored))
 
-;; Token
-(struct Token [name value start-pos end-pos]
-  #:inspector (make-inspector)
-  #:methods gen:custom-write
-  [(define (write-proc s out _)
-     (fprintf out "#<Token ~a>" (Token-name s)))])
+;; Helper
 
-(define-syntax (Tok stx)
-  (syntax-parse stx
-    [(_ name:id) #'(Token 'name (void) start-pos end-pos)]
-    [(_ name:id val:expr) #'(Token 'name val start-pos end-pos)]))
-
-(define ((token-parser name [raw #f]) in)
-  (let ([pos (send-generic in get-pos)]
-        [x (send-generic in pread 1)])
-    (cond
-      [(and (Token? x) (eq? name (Token-name x))) x]
-      [else (send-generic in set-pos pos) parse-failed])))
-
-(define-syntax (<tok> stx)
-  (syntax-parse stx
-    [(_ name:id) #'(token-parser 'name #f)]))
-
-(define-syntax (<raw-tok> stx)
-  (syntax-parse stx
-    [(_ name:id) #'(token-parser 'name #t)]))
-
+(begin-for-syntax
+  (define (make-checker-names names)
+    (let ([new-names
+           (for/list ([ctx (in-list (syntax-e names))])
+             (let ([n (string->symbol (format "<~a>" (syntax-e ctx)))])
+               (datum->syntax ctx n ctx ctx ctx)))])
+      (datum->syntax #f new-names))))
