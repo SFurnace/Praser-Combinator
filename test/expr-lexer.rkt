@@ -21,22 +21,37 @@
 
 
 (module+ test
+  (require racket/list)
+
   (define ts
     (do-lex expr-lexer
-            (open-input-string "(2000 - 2 * (100) + 100) + 300 * 200")))
+            (open-input-string "(-2000 - +2 * (-100) + 100) + -300 * 200")))
 
-  (@ expr
-     (@u op0-expr
-         (@: op0-expr <op-0> expr => (list (Token-value $1) $0 $2))))
+  (define expr-0
+    (let ()
+      (@ num (@u (@: <num> => (Token-value $0))
+                 (@: <op-0> <num>
+                     => (string->number
+                         (format "~a~a"
+                                 (Token-value $0)
+                                 (Token-value $1))))))
+      (@ op0 (@: <op-0> => (Token-value $0)))
+      (@ op1 (@: <op-1> => (Token-value $0)))
 
-  (@ op0-expr
-     (@u op1-expr
-         (@: op1-expr <op-1> op0-expr => (list (Token-value $1) $0 $2))))
+      (@ expr
+         (@u op0-expr
+             (@: op0-expr op0 expr => (list $1 $0 $2))))
 
-  (@ op1-expr
-     (@u (@: <num> => (Token-value $0))
-         (@: <l> expr <r> => $1)))
+      (@ op0-expr
+         (@u op1-expr
+             (@: op1-expr op1 op0-expr => (list $1 $0 $2))))
 
-  (expr ts)
+      (@ op1-expr
+         (@u num
+             (@: <l> expr <r> => $1)))
+
+      expr))
+
+  (expr-0 ts)
 
   )
