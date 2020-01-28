@@ -1,10 +1,10 @@
 #lang scribble/manual
-@require[@for-label[Parser-Combinator
+@require[@for-label[silver-parser
                     racket/base]]
 
-@title{Parser-Combinator}
+@title{Silver Parser}
 @author{drcz}
 
-@defmodule[Parser-Combinator]
+@defmodule[silver-parser]
 
 Package Description Here
