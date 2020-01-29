@@ -6,10 +6,8 @@
 (provide (all-from-out "./parseable.rkt")
          @ @* @+ @? @= @>= @** @u @:)
 
-
 ;; Parser ::= parseable<%> -> Any | parse-failed
 ;; 若parse不成功，则parseable<%>的pos需要保持不变
-
 (define left-recursion-records (make-parameter (set)))
 
 (define-syntax (@ stx)
@@ -24,7 +22,7 @@
                (parameterize ([left-recursion-records (set-add records mark)])
                  (parser in)))))]))
 
-;; Combinators
+;; Repeat Combinators
 (define (((@repeat m n) parser) in)
   (define pos (send-generic in get-pos))
   (let loop ([rs '()])
@@ -40,10 +38,17 @@
 (define @* (@repeat 0 +inf.0))
 (define @+ (@repeat 1 +inf.0))
 (define @? (@repeat 0 1))
-(define (@= n) (@repeat n n))
-(define (@>= n) (@repeat n +inf.0))
-(define (@** m n) (@repeat m n))
+(define/contract (@= n)
+  (-> natural-number/c any)
+  (@repeat n n))
+(define/contract (@>= n)
+  (-> natural-number/c any)
+  (@repeat n +inf.0))
+(define/contract (@** m n)
+  (-> natural-number/c natural-number/c any)
+  (@repeat m n))
 
+;; Choice Combinators
 (define ((@u . parsers) in)
   (define pos (send-generic in get-pos))
   (define rs
@@ -59,38 +64,33 @@
         (send-generic in set-pos (cdr r))
         (car r))))
 
+;; Sequence Combinators
 (define-syntax (@: stx)
-  (syntax-parse stx #:literals (=>)
-    [(_ parser:expr ...+ => body:expr ...+)
-     (with-syntax ([(name ...) (make-temp-names #'(parser ...))])
+  (syntax-parse stx #:datum-literals (=>)
+    [(_ exp:expr ...+ => body:expr ...+)
+     (with-syntax ([(name ...) (make-temp-names #'(exp ...))])
        #'(lambda (in)
            (let/ec k
-             (let* ([name (let ([p parser])
-                            (if (procedure? p)
-                                (let ([r (parser in)])
+             (let* ([pos (send-generic in get-pos)]
+                    [fail (λ () (send-generic in set-pos pos) (k parse-failed))]
+                    [name (let ([v exp])
+                            (if (procedure? v)
+                                (let ([r (v in)])
                                   (if (parse-failed? r)
-                                      (k parse-failed)
+                                      (fail)
                                       r))
-                                p))]
+                                v))]
                     ...)
                body ...))))]
-    [(_ parser:expr ...+)
-     (with-syntax ([(name ...) (make-temp-names #'(parser ...))])
-       #'(lambda (in)
-           (let/ec k
-             (let* ([name (let ([p parser])
-                            (if (procedure? p)
-                                (let ([r (parser in)])
-                                  (if (parse-failed? r)
-                                      (k parse-failed)
-                                      r))
-                                p))]
-                    ...)
-               (list name ...)))))]))
+    [(_ exp:expr ...+)
+     #`(@: exp ... => (list #,@(make-temp-names #'(exp ...))))]))
 
+;; Other Patterns
+
+;; Helper
 (begin-for-syntax
   (define (make-temp-names stx)
     (let ([temps (for/list ([n (in-naturals)]
-                              [s (in-list (syntax-e stx))])
-                     (datum->syntax s (string->symbol (format "$~a" n)) s s s))])
-    (datum->syntax #f temps))))
+                            [s (in-list (syntax-e stx))])
+                   (datum->syntax s (string->symbol (format "$~a" n)) s s s))])
+      (datum->syntax #f temps))))

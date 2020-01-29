@@ -52,7 +52,7 @@
   (syntax-parse stx
     [(_ name:id ...+)
      (with-syntax ([(checker ...) (make-checker-names #'(name ...))])
-       #`(begin
+       #'(begin
            (begin
              (define-syntax (name stx)
                (syntax-parse stx
@@ -81,10 +81,12 @@
       (cond
         [(>= pos l) eof]
         [(= n 1)
-         (begin0 (vector-ref toks pos)
+         (begin0
+           (vector-ref toks pos)
            (set! pos p))]
         [else
-         (begin0 (vector-copy toks pos (min p l))
+         (begin0
+           (vector-copy toks pos (min p l))
            (set! pos (min p l)))]))
 
     (define/public (peek [n 1])
