@@ -116,5 +116,5 @@
     (let ([new-names
            (for/list ([ctx (in-list (syntax-e names))])
              (let ([n (string->symbol (format "<~a>" (syntax-e ctx)))])
-               (datum->syntax ctx n ctx ctx ctx)))])
+               (datum->syntax ctx n ctx ctx)))])
       (datum->syntax #f new-names))))

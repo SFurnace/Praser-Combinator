@@ -92,5 +92,5 @@
   (define (make-temp-names stx)
     (let ([temps (for/list ([n (in-naturals)]
                             [s (in-list (syntax-e stx))])
-                   (datum->syntax s (string->symbol (format "$~a" n)) s s s))])
+                   (datum->syntax s (string->symbol (format "$~a" n)) s s))])
       (datum->syntax #f temps))))
