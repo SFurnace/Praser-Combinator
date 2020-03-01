@@ -14,12 +14,14 @@
 
 (provide lexer start-pos end-pos lexeme input-port file-path
          define-lex-abbrev define-lex-abbrevs define-lex-trans
+         (struct-out position) (struct-out position-token)
 
          char-set any-char any-string nothing
          alphabetic lower-case upper-case title-case numeric
          symbolic punctuation graphic whitespace blank iso-control
          :* :+ :? := :>= :** :: :& :- :~ :/
 
+         define-special-token
          (contract-out [do-lex (-> procedure? input-port? (is-a?/c parseable<%>))]))
 
 (define (do-lex lexer in)
@@ -48,6 +50,24 @@
       [(and (Token? x) (eq? name (Token-name x))) x]
       [else (send-generic in set-pos pos) parse-failed])))
 
+(define (new-position in)
+  (let-values ([(l c p) (port-next-location in)])
+    (position p l c)))
+
+(define-syntax (define-special-token stx)
+  (syntax-parse stx
+    [(_ name:id body:expr ...+)
+     (with-syntax ([(checker ...) (make-checker-names #'(name))])
+       #'(begin
+           (define (name in start)
+             (define out (open-output-string))
+             (parameterize ([current-input-port in]
+                            [current-output-port out])
+               (with-handlers ([string? (λ (s) (error 'name s))])
+                 body ...)
+               (Token 'name (get-output-string out) start (new-position in))))
+           (define checker ... (token-checker 'name))))]))
+
 (define-syntax (define-tokens stx)
   (syntax-parse stx
     [(_ name:id ...+)
@@ -58,8 +78,7 @@
                (syntax-parse stx
                  [(_) #'(Token 'name (void) start-pos end-pos)]
                  [(_ val:expr) #'(Token 'name val start-pos end-pos)]))
-             (define checker
-               (values (token-checker 'name))))
+             (define checker (token-checker 'name)))
            ...))]))
 
 ;; Token Stream
