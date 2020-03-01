@@ -57,16 +57,17 @@
 (define-syntax (define-special-token stx)
   (syntax-parse stx
     [(_ name:id body:expr ...+)
-     (with-syntax ([(checker ...) (make-checker-names #'(name))])
+     (with-syntax ([(maker checker) (make-special-names #'name)])
        #'(begin
-           (define (name in start)
+           (define-syntax-rule (name) (maker input-port start-pos))
+           (define (maker in start)
              (define out (open-output-string))
              (parameterize ([current-input-port in]
                             [current-output-port out])
                (with-handlers ([string? (λ (s) (error 'name s))])
                  body ...)
                (Token 'name (get-output-string out) start (new-position in))))
-           (define checker ... (token-checker 'name))))]))
+           (define checker (token-checker 'name))))]))
 
 (define-syntax (define-tokens stx)
   (syntax-parse stx
@@ -129,8 +130,14 @@
   (eq? x ignored))
 
 ;; Helper
-
 (begin-for-syntax
+  (define (make-special-names name)
+    (let* ([n (syntax-e name)]
+          [m (string->symbol (format "~a-maker" n))]
+          [c (string->symbol (format "<~a>" n))])
+      (datum->syntax #f (list (datum->syntax name m name name)
+                              (datum->syntax name c name name)))))
+  
   (define (make-checker-names names)
     (let ([new-names
            (for/list ([ctx (in-list (syntax-e names))])
