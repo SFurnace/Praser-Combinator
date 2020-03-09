@@ -4,7 +4,8 @@
          (for-syntax racket/base racket/list syntax/parse))
 
 (provide (all-from-out "./parseable.rkt")
-         @ @: @* @*? @+ @+? @? @?? @= @>= @>=? @** @**? @u @U @may @try @sepBy)
+         @ @: @* @*? @+ @+? @? @?? @= @>= @>=? @** @**? @u @U @may @try @sepBy
+         @infix-left @infix-right @prefix @postfix)
 
 ;; Parser ::= parseable<%> -> Any
 ;; 若parse不成功，则parseable<%>的pos需要保持不变
@@ -171,6 +172,55 @@
 
 (define (@sepBy p0 p1)
   (@* (@: p1 (@try p0) => $0)))
+
+(define ((@infix op elem associativity #:constructor [c list]) in)
+  (define pos0 (send-generic in get-pos))
+  (define (fail)
+    (send-generic in set-pos pos0)
+    parse-failed)
+  (define (construct lst)
+    (let ([lst (if (eq? associativity 'right) lst (reverse lst))])
+      (let loop ([l (cdr lst)]
+                 [e0 (car lst)])
+        (let*  ([op (car l)]
+                [e1 (cadr l)]
+                [l (cddr l)]
+                [exp (if (eq? associativity 'right) (c op e1 e0) (c op e0 e1))])
+          (if (null? l)
+              exp
+              (loop l exp))))))
+  (define (loop0 stk pos)
+    (let ([v (elem in)])
+      (if (parse-failed? v)
+          (if (> (length stk) 3)
+              (begin
+                (send-generic in set-pos pos)
+                (construct (cdr stk)))
+              (fail))
+          (if (< (length stk) 2)
+              (loop1 (cons v stk) pos)
+              (loop1 (cons v stk) (send-generic in get-pos))))))
+  (define (loop1 stk pos)
+    (let ([v (op in)])
+      (if (parse-failed? v)
+          (if (>= (length stk) 3)
+              (construct stk)
+              (fail))
+          (loop0 (cons v stk) pos))))
+
+  (loop0 '() pos0))
+
+(define (@infix-left op elem #:constructor [c list])
+  (@infix op elem 'left #:constructor c))
+
+(define (@infix-right op elem #:constructor [c list])
+  (@infix op elem 'right #:constructor c))
+
+(define (@prefix op elem #:constructor [c list])
+  (@: (@+ op) elem => (foldl c $1 $0)))
+
+(define (@postfix op elem #:constructor [c list])
+  (@: elem (@+ op) => (foldl c $0 $1)))
 
 ;; Helper
 (begin-for-syntax

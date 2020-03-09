@@ -6,14 +6,6 @@
   (num1 (char-set "123456789"))
   (num0 (char-set "0123456789")))
 
-(@ num (@u (@: <NUM> => (Token-value $0))
-           (@: op0 <NUM>
-               => (string->number (format "~a~a" $0 (Token-value $1))))))
-
-(@ op0 (@: (@u <ADD> <SUB>) => (Token-value $0)))
-
-(@ op1 (@: (@u <MUL> <DIV>) => (Token-value $0)))
-
 ;; Lexer
 (define-tokens ADD SUB MUL DIV L R NUM)
 
@@ -32,21 +24,34 @@
     (NUM (string->number lexeme))]))
 
 ;; Parser
-(@ expr (@U op0-expr
-            (@: #:msg "bad op0 expr"
-                op0-expr op0 ! expr => (list $1 $0 $2))))
+(@ num (@: <NUM> => (Token-value $0)))
 
-(@ op0-expr (@U op1-expr
-                (@: #:msg "bad op1 expr"
-                    op1-expr op1 ! op0-expr => (list $1 $0 $2))))
+(@ op0 (@: (@u <ADD> <SUB>) => (Token-value $0)))
 
-(@ op1-expr (@U num
-                (@: #:msg "can't find match bracket"
-                    <L> ! expr <R> => $1)))
+(@ op1 (@: (@u <MUL> <DIV>) => (Token-value $0)))
+
+(@ expr additive)
+
+(@ additive (@u (@infix-left op0 multiplicative #:constructor E)
+                multiplicative))
+
+(@ multiplicative (@u (@infix-left op1 prefix #:constructor E)
+                      prefix))
+
+(@ prefix (@u (@prefix op0 unary #:constructor P)
+              unary))
+
+(@ unary (@u (@: <L> expr <R> => $1)
+             num))
 
 ;; Test
+(struct E [op l r] #:transparent)
+(struct P [op e] #:transparent)
+
+(define t0 "(-2000 - +2 * (-100 + 100) + -1) - 300 * 200")
+
 (define ts
   (do-lex expr-lexer
-          (open-input-string "(-2000 - +2 * (-100 + 100) + -1) -300 * 200")))
+          (open-input-string "--1 - ++2 - 3 * (-4) / ++5 + (6 / 3 + 2)")))
 
 (expr ts)
