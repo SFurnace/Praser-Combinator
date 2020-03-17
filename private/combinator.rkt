@@ -1,31 +1,30 @@
 #lang racket/base
 (require "./parseable.rkt"
          racket/set racket/contract
-         (for-syntax racket/base racket/list syntax/parse))
+         (for-syntax racket/base syntax/parse))
 
 (provide (all-from-out "./parseable.rkt")
-         @ @: @* @*? @+ @+? @? @?? @= @>= @>=? @** @**? @u @U @may @try @sepBy
-         @infix-left @infix-right @prefix @postfix)
+         silver-parser-debug
+         @ @: @* @*? @+ @+? @? @?? @= @>= @>=? @** @**? @u @U
+         @sepBy @infix-left @infix-right @prefix @postfix)
 
 ;; Parser ::= parseable<%> -> Any
 ;; 若parse不成功，则parseable<%>的pos需要保持不变
 
 ;; parameters
+(define silver-parser-debug (make-parameter #f))
 (define left-recursion-records (make-parameter (set)))
-(define trace-back-records (make-parameter '()))
 
 ;; parser binder
 (define-syntax (@ stx)
   (syntax-parse stx
     [(_ name:id parser:expr)
      #'(define (name in)
-         (let* ([pos (send-generic in get-pos)]
-                [mark (cons name pos)]
-                [records (left-recursion-records)])
-           (if (set-member? records mark)
-               parse-failed
-               (parameterize ([left-recursion-records (set-add records mark)]
-                              [trace-back-records (trace-back-records)])
+         (let ([mark (cons 'name (send-generic in get-pos))])
+           (when (silver-parser-debug) (displayln mark) (sleep (silver-parser-debug)))
+           (if (set-member? (left-recursion-records) mark)
+               (error 'name "left recursion detected at ~a" mark)
+               (parameterize ([left-recursion-records (set-add (left-recursion-records) mark)])
                  (parser in)))))]))
 
 ;; Sequence Combinators
@@ -153,7 +152,7 @@
         (send-generic in set-pos (cdr r))
         (car r))))
 
-;; Other Patterns
+;; Helpers, just use in library
 (define ((@may p) in)
   (let ([c (send-generic in get-pos)])
     (dynamic-wind
@@ -170,25 +169,28 @@
           #f)
         r)))
 
+;; Other Patterns
 (define (@sepBy p0 p1)
   (@* (@: p1 (@try p0) => $0)))
 
-(define ((@infix op elem associativity #:constructor [c list]) in)
+(define ((@infix op elem associativity #:constructor [c list] #:strictly [s #f]) in)
   (define pos0 (send-generic in get-pos))
   (define (fail)
     (send-generic in set-pos pos0)
     parse-failed)
   (define (construct lst)
-    (let ([lst (if (eq? associativity 'right) lst (reverse lst))])
-      (let loop ([l (cdr lst)]
-                 [e0 (car lst)])
-        (let*  ([op (car l)]
-                [e1 (cadr l)]
-                [l (cddr l)]
-                [exp (if (eq? associativity 'right) (c op e1 e0) (c op e0 e1))])
-          (if (null? l)
-              exp
-              (loop l exp))))))
+    (if (= (length lst) 1)
+        (car lst)
+        (let ([lst (if (eq? associativity 'right) lst (reverse lst))])
+          (let loop ([l (cdr lst)]
+                     [e0 (car lst)])
+            (let*  ([op (car l)]
+                    [e1 (cadr l)]
+                    [l (cddr l)]
+                    [exp (if (eq? associativity 'right) (c op e1 e0) (c op e0 e1))])
+              (if (null? l)
+                  exp
+                  (loop l exp)))))))
   (define (loop0 stk pos)
     (let ([v (elem in)])
       (if (parse-failed? v)
@@ -203,18 +205,18 @@
   (define (loop1 stk pos)
     (let ([v (op in)])
       (if (parse-failed? v)
-          (if (>= (length stk) 3)
+          (if (or (>= (length stk) 3) (not s))
               (construct stk)
               (fail))
           (loop0 (cons v stk) pos))))
 
   (loop0 '() pos0))
 
-(define (@infix-left op elem #:constructor [c list])
-  (@infix op elem 'left #:constructor c))
+(define (@infix-left op elem #:constructor [c list] #:strictly [s #f])
+  (@infix op elem 'left #:constructor c #:strictly s))
 
-(define (@infix-right op elem #:constructor [c list])
-  (@infix op elem 'right #:constructor c))
+(define (@infix-right op elem #:constructor [c list] #:strictly [s #f])
+  (@infix op elem 'right #:constructor c #:strictly s))
 
 (define (@prefix op elem #:constructor [c list])
   (@: (@+ op) elem => (foldl c $1 $0)))
