@@ -4,11 +4,12 @@
          (only-in racket/vector vector-copy)
          (for-syntax racket/base syntax/parse))
 
-(provide (struct-out Token) define-tokens
+(provide (contract-out [do-lex (-> procedure? input-port? (is-a?/c parseable<%>))])
+         (struct-out Token) define-tokens define-special-token
          ignored ignored?
          (all-from-out "./parseable.rkt"))
 
-;; Lexer
+;; lexer borrow from parse-tools
 (require parser-tools/lex
          (prefix-in : parser-tools/lex-sre))
 
@@ -19,11 +20,9 @@
          char-set any-char any-string nothing
          alphabetic lower-case upper-case title-case numeric
          symbolic punctuation graphic whitespace blank iso-control
-         :* :+ :? := :>= :** :: :& :- :~ :/
+         :* :+ :? := :>= :** :: :& :- :~ :/)
 
-         define-special-token
-         (contract-out [do-lex (-> procedure? input-port? (is-a?/c parseable<%>))]))
-
+;; lexer wrapper
 (define (do-lex lexer in)
   (port-count-lines! in)
   (let loop ([toks '()])
@@ -35,7 +34,7 @@
             [else (loop (cons t toks))])))))
 
 ;; Token
-(struct Token [name value start-pos end-pos]
+(struct Token [name value srcloc]
   #:inspector (make-inspector)
   #:methods gen:custom-write
   [(define write-proc
@@ -50,10 +49,6 @@
       [(and (Token? x) (eq? name (Token-name x))) x]
       [else (send-generic in set-pos pos) parse-failed])))
 
-(define (new-position in)
-  (let-values ([(l c p) (port-next-location in)])
-    (position p l c)))
-
 (define-syntax (define-special-token stx)
   (syntax-parse stx
     [(_ name:id body:expr ...+)
@@ -66,7 +61,7 @@
                             [current-output-port out])
                (with-handlers ([string? (λ (s) (error 'name s))])
                  body ...)
-               (Token 'name (get-output-string out) start (new-position in))))
+               (make-token 'name (get-output-string out) start (new-position in))))
            (define checker (token-checker 'name))))]))
 
 (define-syntax (define-tokens stx)
@@ -77,8 +72,8 @@
            (begin
              (define-syntax (name stx)
                (syntax-parse stx
-                 [(_) #'(Token 'name (void) start-pos end-pos)]
-                 [(_ val:expr) #'(Token 'name val start-pos end-pos)]))
+                 [(_) #'(make-token 'name (void) start-pos end-pos)]
+                 [(_ val:expr) #'(make-token 'name val start-pos end-pos)]))
              (define checker (token-checker 'name)))
            ...))]))
 
@@ -130,11 +125,23 @@
   (eq? x ignored))
 
 ;; Helper
+(define (make-token name val start-pos end-pos)
+  (Token name val (pos->srcloc start-pos end-pos)))
+
+(define (new-position in)
+  (let-values ([(l c p) (port-next-location in)])
+    (position p l c)))
+
+(define (pos->srcloc start end)
+  (srcloc (parsable-name)
+          (position-line start) (position-col start) (position-offset start)
+          (- (position-offset end) (position-offset start))))
+
 (begin-for-syntax
   (define (make-special-names name)
     (let* ([n (syntax-e name)]
-          [m (string->symbol (format "~a-maker" n))]
-          [c (string->symbol (format "<~a>" n))])
+           [m (string->symbol (format "~a-maker" n))]
+           [c (string->symbol (format "<~a>" n))])
       (datum->syntax #f (list (datum->syntax name m name name)
                               (datum->syntax name c name name)))))
   

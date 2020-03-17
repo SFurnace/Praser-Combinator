@@ -2,7 +2,7 @@
 @require[@for-label[silver-parser
                     racket/base]]
 
-@title{Silver Parser}
+@title{silver-parser}
 @author{drcz}
 
 @defmodule[silver-parser]

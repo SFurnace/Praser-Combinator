@@ -32,18 +32,21 @@
     (NUM (string->number lexeme))]))
 
 ;; Parser
-(@ expr (@u op0-expr
-            (@: op0-expr op0 expr => (list $1 $0 $2))))
+(@ expr (@U op0-expr
+            (@: #:msg "bad op0 expr"
+                op0-expr op0 ! expr => (list $1 $0 $2))))
 
-(@ op0-expr (@u op1-expr
-                (@: op1-expr op1 op0-expr => (list $1 $0 $2))))
+(@ op0-expr (@U op1-expr
+                (@: #:msg "bad op1 expr"
+                    op1-expr op1 ! op0-expr => (list $1 $0 $2))))
 
-(@ op1-expr (@u num
-                (@: <L> expr <R> => $1)))
+(@ op1-expr (@U num
+                (@: #:msg "can't find match bracket"
+                    <L> ! expr <R> => $1)))
 
 ;; Test
 (define ts
   (do-lex expr-lexer
-          (open-input-string "(-2000 - +2 * (-100) + 100) + -300 * 200")))
+          (open-input-string "(-2000 - +2 * (-100 + 100) + -1) -300 * 200")))
 
 (expr ts)

@@ -1,3 +1,3 @@
-Parser-Combinator
-=================
+silver-parser
+=============
 README text here.

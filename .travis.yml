@@ -33,7 +33,7 @@ before_install:
 - export PATH="${RACKET_DIR}/bin:${PATH}" #install-racket.sh can't set for us
 
 install:
- - raco pkg install --auto --name Parser-Combinator
+ - raco pkg install --auto --name silver-parser
 
 before_script:
 
@@ -41,9 +41,9 @@ before_script:
 # `raco pkg install --deps search-auto` to install any required
 # packages without it getting stuck on a confirmation prompt.
 script:
- - raco test -x -p Parser-Combinator
+ - raco test -x -p silver-parser
 
 after_success:
- - raco setup --check-pkg-deps --pkgs Parser-Combinator
+ - raco setup --check-pkg-deps --pkgs silver-parser
  - raco pkg install --auto cover cover-coveralls
  - raco cover -b -f coveralls -d $TRAVIS_BUILD_DIR/coverage .
